@@ -73,9 +73,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ---- Audio (fade in on pages 2-3, fade out otherwise) ----
   const AUDIO_SRC = "music.mpeg"; // keep this name (in your zip)
-  const music = new Audio(AUDIO_SRC);
-  music.loop = true;
-  music.volume = 0;
+
+  // iOS/Safari can ignore some controls unless audio is started from a user gesture.
+  // Creating the Audio element lazily + binding to touch events makes the mute button
+  // work reliably on iPhone.
+  let music = null;
+
+  function getMusic() {
+    if (music) return music;
+    const a = new Audio(AUDIO_SRC);
+    a.loop = true;
+    a.volume = 0;
+    // iOS inline playback
+    a.setAttribute('playsinline', '');
+    a.setAttribute('webkit-playsinline', '');
+    music = a;
+    return music;
+  }
 
   // Optional UI: mute/unmute without changing the layout
   const audioToggle = document.getElementById('audioToggle');
@@ -99,6 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function unlockAudio(){
     if (audioUnlocked) return;
     audioUnlocked = true;
+    const music = getMusic();
     // tiny play/pause to satisfy browser gesture requirement
     music.play().then(() => {
       music.pause();
@@ -115,6 +130,7 @@ document.addEventListener('DOMContentLoaded', () => {
   );
 
   function fadeTo(target, onDone){
+    const music = getMusic();
     clearInterval(fadeTimer);
     const step = (target > music.volume) ? 0.04 : -0.04;
     fadeTimer = setInterval(() => {
@@ -130,6 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function playWithFadeIn(){
     // must be unlocked OR triggered by a gesture (buttons/swipe)
+    const music = getMusic();
     music.play().then(() => {
       fadeTo(0.6);
     }).catch(() => {
@@ -139,6 +156,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function fadeOutAndPause(){
+    const music = getMusic();
     fadeTo(0, () => {
       music.pause();
       // keep currentTime for smooth resume, or reset if you prefer:
@@ -147,6 +165,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateAudio(pageIndex){
+    const music = getMusic();
     // If user muted, always ensure the audio is off.
     if (userMuted){
       if (!music.paused) fadeOutAndPause();
@@ -167,7 +186,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // Toggle button (mute/unmute)
   if (audioToggle){
     updateAudioToggleUI();
-    audioToggle.addEventListener('click', () => {
+    const onToggle = (e) => {
+      // On iOS, click can be unreliable when swiping; use touchstart/pointerdown too.
+      if (e){
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      unlockAudio();
       userMuted = !userMuted;
       updateAudioToggleUI();
       const idx = (pageFlip && typeof pageFlip.getCurrentPageIndex === 'function')
@@ -175,6 +200,10 @@ document.addEventListener('DOMContentLoaded', () => {
         : 0;
       // Apply immediately based on current page
       updateAudio(idx);
-    });
+    };
+
+    audioToggle.addEventListener('click', onToggle);
+    audioToggle.addEventListener('touchstart', onToggle, { passive: false });
+    audioToggle.addEventListener('pointerdown', onToggle, { passive: false });
   }
 });
