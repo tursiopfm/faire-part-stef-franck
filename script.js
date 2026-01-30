@@ -77,6 +77,22 @@ document.addEventListener('DOMContentLoaded', () => {
   music.loop = true;
   music.volume = 0;
 
+  // Optional UI: mute/unmute without changing the layout
+  const audioToggle = document.getElementById('audioToggle');
+  let userMuted = false;
+  function updateAudioToggleUI(){
+    if (!audioToggle) return;
+    const iconEl = audioToggle.querySelector('.icon') || audioToggle;
+    if (userMuted) {
+      iconEl.textContent = '🔇';
+      audioToggle.setAttribute('aria-label', 'Rétablir la musique');
+    } else {
+      iconEl.textContent = '🔊';
+      audioToggle.setAttribute('aria-label', 'Couper la musique');
+    }
+  }
+  updateAudioToggleUI();
+
   let audioUnlocked = false;
   let fadeTimer = null;
 
@@ -131,6 +147,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateAudio(pageIndex){
+    // If user muted, always ensure the audio is off.
+    if (userMuted){
+      if (!music.paused) fadeOutAndPause();
+      return;
+    }
     const isInside = (pageIndex === 1 || pageIndex === 2);
     if (isInside){
       if (music.paused){
@@ -141,5 +162,19 @@ document.addEventListener('DOMContentLoaded', () => {
         fadeOutAndPause();
       }
     }
+  }
+
+  // Toggle button (mute/unmute)
+  if (audioToggle){
+    updateAudioToggleUI();
+    audioToggle.addEventListener('click', () => {
+      userMuted = !userMuted;
+      updateAudioToggleUI();
+      const idx = (pageFlip && typeof pageFlip.getCurrentPageIndex === 'function')
+        ? pageFlip.getCurrentPageIndex()
+        : 0;
+      // Apply immediately based on current page
+      updateAudio(idx);
+    });
   }
 });
