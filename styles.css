@@ -106,3 +106,9 @@ body{
 @media (max-width: 680px){
   .pill{min-width: 140px}
 }
+
+/* iOS/Android: reduce tap delay and avoid highlight on the audio button */
+#audioToggle{
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}

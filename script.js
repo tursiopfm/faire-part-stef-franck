@@ -107,8 +107,19 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   updateAudioToggleUI();
 
+  // iOS Safari (and some in-app iOS browsers) can ignore programmatic volume
+  // changes on <audio>. To guarantee a real "mute", we will fade-out then
+  // PAUSE the audio. Unmute = play + fade-in.
+
   let audioUnlocked = false;
   let fadeTimer = null;
+
+  function clearFade(){
+    if (fadeTimer) {
+      clearInterval(fadeTimer);
+      fadeTimer = null;
+    }
+  }
 
   function unlockAudio(){
     if (audioUnlocked) return;
@@ -204,6 +215,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     audioToggle.addEventListener('click', onToggle);
     audioToggle.addEventListener('touchstart', onToggle, { passive: false });
+    audioToggle.addEventListener('touchend', onToggle, { passive: false });
     audioToggle.addEventListener('pointerdown', onToggle, { passive: false });
+    audioToggle.addEventListener('pointerup', onToggle, { passive: false });
+
+    // Extra fallback for some iOS in-app browsers that sometimes
+    // don't fire the listener as expected.
+    audioToggle.onclick = onToggle;
   }
 });
