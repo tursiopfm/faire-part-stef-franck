@@ -41,6 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateUI(){
+    updateMuteUI();
     const i = pageFlip.getCurrentPageIndex(); // 0..3
     if (i === 0){
       pageLabel.textContent = "Couverture";
@@ -71,26 +72,60 @@ document.addEventListener('DOMContentLoaded', () => {
   // Force first UI refresh once images are ready
   setTimeout(updateUI, 200);
 
+  // Mute button
+  if(muteBtn){
+    updateMuteUI();
+    muteBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Toggle
+      userMuted = !userMuted;
+      updateMuteUI();
+
+      if(userMuted){
+        // Stop quickly
+        fadeOutAndStop(300);
+      }else{
+        // If we are on the inside spread, start music in this same user gesture (needed for iOS)
+        const current = pageFlip.getCurrentPageIndex();
+        if(isInMiddleSpread(current)){
+          fadeInAndPlay(800);
+        }
+      }
+    });
+  }
+
   // ---- Audio (fade in on pages 2-3, fade out otherwise) ----
-  // iOS Safari/Chrome behaves better when an <audio> element exists in the DOM.
-  const musicEl = document.getElementById('bgm');
-  const music = musicEl || new Audio('music.mpeg');
+  const AUDIO_SRC = "music.mpeg"; // keep this name (in your zip)
+  const music = new Audio(AUDIO_SRC);
   music.loop = true;
+
+  // User mute toggle (works on iOS after a user gesture)
+  let userMuted = false;
+  const muteBtn = document.getElementById("muteBtn");
+
+  function updateMuteUI(){
+    if(!muteBtn) return;
+    muteBtn.textContent = userMuted ? "🔇" : "🔊";
+    muteBtn.setAttribute("aria-pressed", userMuted ? "true" : "false");
+    muteBtn.setAttribute("aria-label", userMuted ? "Activer le son" : "Couper le son");
+    muteBtn.classList.toggle("is-muted", userMuted);
+  }
+
+  function stopAudioImmediate(){
+    clearInterval(fadeTimer);
+    try { music.pause(); } catch(e) {}
+    music.volume = 0;
+  }
+
   music.volume = 0;
 
   let audioUnlocked = false;
   let fadeTimer = null;
-  let audioMuted = false;
-  let lastPageIndex = 0;
-
-  const audioBtn = document.getElementById('audioBtn');
-  function setAudioIcon(){
-    if (!audioBtn) return;
-    audioBtn.textContent = audioMuted ? '🔇' : '🔊';
-  }
-  setAudioIcon();
 
   function unlockAudio(){
+    if(userMuted) return;
     if (audioUnlocked) return;
     audioUnlocked = true;
     // tiny play/pause to satisfy browser gesture requirement
@@ -107,32 +142,6 @@ document.addEventListener('DOMContentLoaded', () => {
   ['click','touchstart','keydown'].forEach(evt =>
     document.addEventListener(evt, unlockAudio, { once: true, passive: true })
   );
-
-  // Mute toggle (needs explicit user gesture on iOS)
-  function toggleAudio(e){
-    if (e) {
-      // On iOS, prevent the touch from being treated as scroll
-      if (e.type === 'touchstart') e.preventDefault();
-      e.stopPropagation();
-    }
-    audioMuted = !audioMuted;
-    setAudioIcon();
-
-    if (audioMuted){
-      // Always fade out & pause
-      if (!music.paused) fadeOutAndPause();
-      return;
-    }
-
-    // Unmuted: if we're currently inside pages 2-3, resume
-    const isInside = (lastPageIndex === 1 || lastPageIndex === 2);
-    if (isInside) playWithFadeIn();
-  }
-
-  if (audioBtn){
-    audioBtn.addEventListener('click', toggleAudio, { passive: false });
-    audioBtn.addEventListener('touchstart', toggleAudio, { passive: false });
-  }
 
   function fadeTo(target, onDone){
     clearInterval(fadeTimer);
@@ -167,45 +176,20 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateAudio(pageIndex){
-    lastPageIndex = pageIndex;
-    if (audioMuted) return;
+    if(userMuted){
+      stopAudioImmediate();
+      updateMuteUI();
+      return;
+    }
     const isInside = (pageIndex === 1 || pageIndex === 2);
     if (isInside){
-      if (music.paused) playWithFadeIn();
+      if (music.paused){
+        playWithFadeIn();
+      }
     } else {
-      if (!music.paused) fadeOutAndPause();
+      if (!music.paused){
+        fadeOutAndPause();
+      }
     }
-  }
-
-  // Audio toggle button (works on iOS: handle touchstart + click)
-  const audioBtn = document.getElementById('audioBtn');
-  function renderAudioBtn(){
-    if (!audioBtn) return;
-    audioBtn.textContent = audioMuted ? '🔇' : '🔊';
-    audioBtn.setAttribute('aria-label', audioMuted ? 'Activer la musique' : 'Couper la musique');
-  }
-  function toggleAudio(e){
-    if (e) {
-      // prevent the touch from also triggering a page flip
-      e.preventDefault();
-      e.stopPropagation();
-    }
-    // ensure audio is unlocked by a user gesture
-    unlockAudio();
-
-    audioMuted = !audioMuted;
-    if (audioMuted){
-      // stop immediately (with fade)
-      if (!music.paused) fadeOutAndPause();
-    } else {
-      // resume if we're inside the interior pages
-      updateAudio(lastPageIndex);
-    }
-    renderAudioBtn();
-  }
-  if (audioBtn){
-    audioBtn.addEventListener('touchstart', toggleAudio, {passive: false});
-    audioBtn.addEventListener('click', toggleAudio);
-    renderAudioBtn();
   }
 });

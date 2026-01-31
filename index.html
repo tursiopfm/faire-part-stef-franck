@@ -14,6 +14,7 @@
       <button id="prevBtn" class="btn" aria-label="Page précédente">◀</button>
       <div id="pageLabel" class="pill">Couverture</div>
       <button id="nextBtn" class="btn" aria-label="Page suivante">▶</button>
+      <button id="muteBtn" class="btn btn-mute" aria-label="Couper le son" aria-pressed="false">🔊</button>
     </div>
   </header>
 
@@ -22,12 +23,6 @@
       <div id="viewport" class="viewport is-cover">
         <div id="book" class="book"></div>
       </div>
-
-  <!-- Audio toggle (floating button; does not change the existing layout) -->
-  <button id="audioBtn" class="audio-fab" type="button" aria-label="Couper/activer la musique">🔊</button>
-
-  <!-- Background music (same folder) -->
-  <audio id="bgm" src="music.mpeg" preload="auto" loop playsinline></audio>
     </div>
     <div class="hint">Astuce : glisse (swipe) ou clique sur un coin pour tourner la page.</div>
   </main>
