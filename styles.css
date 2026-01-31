@@ -100,19 +100,19 @@ body{
 }
 
 
-/* Mute button (top-right) */
+/* Mute button (inside topbar actions so it never blocks navigation) */
 .btn-mute{
-  position: fixed;
-  right: 14px;
-  top: calc(14px + env(safe-area-inset-top));
-  z-index: 9999;
-  width: 52px;
-  height: 52px;
+  position: relative;
+  right: auto;
+  top: auto;
+  z-index: 3;
+  width: 44px;
+  height: 44px;
   border-radius: 999px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
+  font-size: 20px;
   padding: 0;
   background: rgba(0,0,0,.35);
   border: 1px solid rgba(255,255,255,.25);
