@@ -1,19 +1,37 @@
 <!doctype html>
 <html lang="fr">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Faire-part</title>
-<link rel="stylesheet" href="styles.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Stéphanie & Franck</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://unpkg.com/page-flip/dist/js/page-flip.browser.js"></script>
 </head>
 <body>
+  <header class="topbar">
+    <div class="brand">💍 Stéphanie &amp; Franck</div>
+    <div class="actions">
+      <button id="prevBtn" class="btn" aria-label="Page précédente">◀</button>
+      <div id="pageLabel" class="pill">Couverture</div>
+      <button id="nextBtn" class="btn" aria-label="Page suivante">▶</button>
+    </div>
+  </header>
 
-<button id="audioToggle" aria-label="Son" type="button">🔊</button>
-<div id="book"></div>
+  <main class="main">
+    <div class="stage">
+      <div id="viewport" class="viewport is-cover">
+        <div id="book" class="book"></div>
+      </div>
 
-<audio id="audio" src="music.mpeg" preload="auto" loop></audio>
+  <!-- Audio toggle (floating button; does not change the existing layout) -->
+  <button id="audioBtn" class="audio-fab" type="button" aria-label="Couper/activer la musique">🔊</button>
 
-<script src="https://unpkg.com/page-flip/dist/js/page-flip.browser.js"></script>
-<script src="script.js"></script>
+  <!-- Background music (same folder) -->
+  <audio id="bgm" src="music.mpeg" preload="auto" loop playsinline></audio>
+    </div>
+    <div class="hint">Astuce : glisse (swipe) ou clique sur un coin pour tourner la page.</div>
+  </main>
+
+  <script src="script.js"></script>
 </body>
 </html>

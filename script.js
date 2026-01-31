@@ -1,50 +1,211 @@
+// V13 layout + PageFlip + Audio fade (pages 2-3 only)
+// Works with index.html that contains: #viewport, #book, #prevBtn, #nextBtn, #pageLabel
 
-const audio = document.getElementById("audio");
-const btn = document.getElementById("audioToggle");
+document.addEventListener('DOMContentLoaded', () => {
+  const viewportEl = document.getElementById('viewport');
+  const bookEl = document.getElementById('book');
+  const prevBtn = document.getElementById('prevBtn');
+  const nextBtn = document.getElementById('nextBtn');
+  const pageLabel = document.getElementById('pageLabel');
 
-let unlocked = false;
+  // ---- PageFlip init (keep V13 behaviour) ----
+  const pageFlip = new St.PageFlip(bookEl, {
+    width: 560,
+    height: 792,
+    size: "stretch",
+    minWidth: 320,
+    maxWidth: 1400,
+    minHeight: 420,
+    maxHeight: 950,
+    showCover: true,
+    flippingTime: 900,
+    maxShadowOpacity: 0.45,
+    useMouseEvents: true,
+    usePortrait: true,
+    autoSize: true
+  });
 
-function unlockAudio(){
-  if(unlocked) return;
-  audio.play().then(()=>{
-    audio.pause();
-    audio.currentTime = 0;
-    unlocked = true;
-  }).catch(()=>{});
-}
+  pageFlip.loadFromImages([
+    "page1.png",
+    "page2.png",
+    "page3.png",
+    "page4.png"
+  ]);
 
-btn.addEventListener("click", ()=>{
-  unlockAudio();
-  if(audio.paused){
-    audio.play();
-    btn.textContent = "🔇";
-  } else {
-    audio.pause();
-    btn.textContent = "🔊";
+  // ---- Closed cover/back clipping (V13) ----
+  function setMode(mode){ // 'cover' | 'back' | 'spread'
+    viewportEl.classList.remove('is-cover','is-back','is-spread');
+    viewportEl.classList.add(
+      mode === 'cover' ? 'is-cover' : (mode === 'back' ? 'is-back' : 'is-spread')
+    );
   }
-});
 
-document.addEventListener("touchstart", unlockAudio, { once:true });
+  function updateUI(){
+    const i = pageFlip.getCurrentPageIndex(); // 0..3
+    if (i === 0){
+      pageLabel.textContent = "Couverture";
+      setMode('cover');
+    } else if (i === 3){
+      pageLabel.textContent = "Dos du livre";
+      setMode('back');
+    } else {
+      pageLabel.textContent = "Intérieur (livre ouvert)";
+      setMode('spread');
+    }
 
-const pageFlip = new St.PageFlip(document.getElementById("book"),{
-  width:560,
-  height:792,
-  size:"stretch",
-  showCover:true,
-  flippingTime:900
-});
+    // buttons
+    prevBtn.disabled = (i === 0);
+    nextBtn.disabled = (i === 3);
 
-pageFlip.loadFromImages([
-  "page1.png",
-  "page2.png",
-  "page3.png",
-  "page4.png"
-]);
+    updateAudio(i);
+  }
 
-pageFlip.on("flip", ()=>{
-  const i = pageFlip.getCurrentPageIndex();
-  if(i === 0 || i === 3){
-    audio.pause();
-    btn.textContent = "🔊";
+  // ---- Navigation ----
+  prevBtn.addEventListener('click', () => pageFlip.flipPrev());
+  nextBtn.addEventListener('click', () => pageFlip.flipNext());
+
+  pageFlip.on('flip', updateUI);
+  pageFlip.on('changeState', updateUI);
+  pageFlip.on('init', updateUI);
+
+  // Force first UI refresh once images are ready
+  setTimeout(updateUI, 200);
+
+  // ---- Audio (fade in on pages 2-3, fade out otherwise) ----
+  // iOS Safari/Chrome behaves better when an <audio> element exists in the DOM.
+  const musicEl = document.getElementById('bgm');
+  const music = musicEl || new Audio('music.mpeg');
+  music.loop = true;
+  music.volume = 0;
+
+  let audioUnlocked = false;
+  let fadeTimer = null;
+  let audioMuted = false;
+  let lastPageIndex = 0;
+
+  const audioBtn = document.getElementById('audioBtn');
+  function setAudioIcon(){
+    if (!audioBtn) return;
+    audioBtn.textContent = audioMuted ? '🔇' : '🔊';
+  }
+  setAudioIcon();
+
+  function unlockAudio(){
+    if (audioUnlocked) return;
+    audioUnlocked = true;
+    // tiny play/pause to satisfy browser gesture requirement
+    music.play().then(() => {
+      music.pause();
+      music.currentTime = 0;
+    }).catch(() => {
+      // If blocked, we'll try again on next user gesture
+      audioUnlocked = false;
+    });
+  }
+
+  // Unlock on any user gesture
+  ['click','touchstart','keydown'].forEach(evt =>
+    document.addEventListener(evt, unlockAudio, { once: true, passive: true })
+  );
+
+  // Mute toggle (needs explicit user gesture on iOS)
+  function toggleAudio(e){
+    if (e) {
+      // On iOS, prevent the touch from being treated as scroll
+      if (e.type === 'touchstart') e.preventDefault();
+      e.stopPropagation();
+    }
+    audioMuted = !audioMuted;
+    setAudioIcon();
+
+    if (audioMuted){
+      // Always fade out & pause
+      if (!music.paused) fadeOutAndPause();
+      return;
+    }
+
+    // Unmuted: if we're currently inside pages 2-3, resume
+    const isInside = (lastPageIndex === 1 || lastPageIndex === 2);
+    if (isInside) playWithFadeIn();
+  }
+
+  if (audioBtn){
+    audioBtn.addEventListener('click', toggleAudio, { passive: false });
+    audioBtn.addEventListener('touchstart', toggleAudio, { passive: false });
+  }
+
+  function fadeTo(target, onDone){
+    clearInterval(fadeTimer);
+    const step = (target > music.volume) ? 0.04 : -0.04;
+    fadeTimer = setInterval(() => {
+      const v = Math.max(0, Math.min(0.6, music.volume + step));
+      music.volume = v;
+      const reached = (step > 0) ? (v >= target) : (v <= target);
+      if (reached){
+        clearInterval(fadeTimer);
+        if (onDone) onDone();
+      }
+    }, 120);
+  }
+
+  function playWithFadeIn(){
+    // must be unlocked OR triggered by a gesture (buttons/swipe)
+    music.play().then(() => {
+      fadeTo(0.6);
+    }).catch(() => {
+      // try unlock again on next interaction
+      audioUnlocked = false;
+    });
+  }
+
+  function fadeOutAndPause(){
+    fadeTo(0, () => {
+      music.pause();
+      // keep currentTime for smooth resume, or reset if you prefer:
+      // music.currentTime = 0;
+    });
+  }
+
+  function updateAudio(pageIndex){
+    lastPageIndex = pageIndex;
+    if (audioMuted) return;
+    const isInside = (pageIndex === 1 || pageIndex === 2);
+    if (isInside){
+      if (music.paused) playWithFadeIn();
+    } else {
+      if (!music.paused) fadeOutAndPause();
+    }
+  }
+
+  // Audio toggle button (works on iOS: handle touchstart + click)
+  const audioBtn = document.getElementById('audioBtn');
+  function renderAudioBtn(){
+    if (!audioBtn) return;
+    audioBtn.textContent = audioMuted ? '🔇' : '🔊';
+    audioBtn.setAttribute('aria-label', audioMuted ? 'Activer la musique' : 'Couper la musique');
+  }
+  function toggleAudio(e){
+    if (e) {
+      // prevent the touch from also triggering a page flip
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    // ensure audio is unlocked by a user gesture
+    unlockAudio();
+
+    audioMuted = !audioMuted;
+    if (audioMuted){
+      // stop immediately (with fade)
+      if (!music.paused) fadeOutAndPause();
+    } else {
+      // resume if we're inside the interior pages
+      updateAudio(lastPageIndex);
+    }
+    renderAudioBtn();
+  }
+  if (audioBtn){
+    audioBtn.addEventListener('touchstart', toggleAudio, {passive: false});
+    audioBtn.addEventListener('click', toggleAudio);
+    renderAudioBtn();
   }
 });
