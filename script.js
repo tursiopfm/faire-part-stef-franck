@@ -1,209 +1,190 @@
-// Stephanie & Franck — Faire-part interactif
-// Objectifs:
-// - Flipbook (PageFlip) + navigation boutons + swipe
-// - Musique: fade-in doux à l'ouverture / fade-out à la fermeture
-// - Bouton muet (compatible iOS): coupe / remet le son sans casser la navigation
+// V13 layout + PageFlip + Audio fade (pages 2-3 only)
+// Works with index.html that contains: #viewport, #book, #prevBtn, #nextBtn, #pageLabel
 
 document.addEventListener('DOMContentLoaded', () => {
-  // ----- DOM
+  const viewportEl = document.getElementById('viewport');
   const bookEl = document.getElementById('book');
   const prevBtn = document.getElementById('prevBtn');
   const nextBtn = document.getElementById('nextBtn');
-  const viewLabel = document.getElementById('viewLabel');
+  const pageLabel = document.getElementById('pageLabel');
   const muteBtn = document.getElementById('muteBtn');
-  const audio = document.getElementById('bgm');
 
-  // Sécurité
-  if (!bookEl || !prevBtn || !nextBtn || !viewLabel) {
-    // Si un élément manque, on évite de planter toute la page.
-    return;
+  // ---- PageFlip init (keep V13 behaviour) ----
+  const pageFlip = new St.PageFlip(bookEl, {
+    width: 560,
+    height: 792,
+    size: "stretch",
+    minWidth: 320,
+    maxWidth: 1400,
+    minHeight: 420,
+    maxHeight: 950,
+    showCover: true,
+    flippingTime: 900,
+    maxShadowOpacity: 0.45,
+    useMouseEvents: true,
+    usePortrait: true,
+    autoSize: true
+  });
+
+  pageFlip.loadFromImages([
+    "page1.png",
+    "page2.png",
+    "page3.png",
+    "page4.png"
+  ]);
+
+  // ---- Closed cover/back clipping (V13) ----
+  function setMode(mode){ // 'cover' | 'back' | 'spread'
+    viewportEl.classList.remove('is-cover','is-back','is-spread');
+    viewportEl.classList.add(
+      mode === 'cover' ? 'is-cover' : (mode === 'back' ? 'is-back' : 'is-spread')
+    );
   }
 
-  // ----- Audio helpers (fade)
-  const BASE_VOLUME = 0.55;
-  const FADE_IN_MS = 900;
-  const FADE_OUT_MS = 600;
-  let isMuted = false;
-  let fadeTimer = null;
+  function updateUI(){
+    const i = pageFlip.getCurrentPageIndex(); // 0..3
+    if (i === 0){
+      pageLabel.textContent = "Couverture";
+      setMode('cover');
+    } else if (i === 3){
+      pageLabel.textContent = "Dos du livre";
+      setMode('back');
+    } else {
+      pageLabel.textContent = "Intérieur (livre ouvert)";
+      setMode('spread');
+    }
+
+    // buttons
+    prevBtn.disabled = (i === 0);
+    nextBtn.disabled = (i === 3);
+
+    updateAudio(i);
+  }
+
+  // ---- Navigation ----
+  prevBtn.addEventListener('click', () => pageFlip.flipPrev());
+  nextBtn.addEventListener('click', () => pageFlip.flipNext());
+
+  pageFlip.on('flip', updateUI);
+  pageFlip.on('changeState', updateUI);
+  pageFlip.on('init', updateUI);
+
+  // Force first UI refresh once images are ready
+  setTimeout(updateUI, 200);
+
+  // ---- Audio (fade in on pages 2-3, fade out otherwise) ----
+  const AUDIO_SRC = "music.mpeg"; // keep this name (in your zip)
+  const music = new Audio(AUDIO_SRC);
+  music.loop = true;
+  music.volume = 0;
+
   let audioUnlocked = false;
+  let fadeTimer = null;
+  let isMuted = (localStorage.getItem('sf_invite_muted') === '1');
 
-  function clearFade() {
-    if (fadeTimer) {
-      cancelAnimationFrame(fadeTimer);
-      fadeTimer = null;
-    }
+  function updateMuteIcon(){
+    if (!muteBtn) return;
+    muteBtn.textContent = isMuted ? '🔇' : '🔊';
+    muteBtn.setAttribute('aria-label', isMuted ? 'Activer la musique' : 'Couper la musique');
+    muteBtn.title = isMuted ? 'Musique coupée' : 'Musique';
   }
 
-  function fadeTo(targetVolume, durationMs, onDone) {
-    if (!audio) return;
-    clearFade();
+  function setMuted(nextMuted, { persist = true } = {}){
+    isMuted = !!nextMuted;
+    if (persist){
+      localStorage.setItem('sf_invite_muted', isMuted ? '1' : '0');
+    }
+    updateMuteIcon();
 
-    const start = performance.now();
-    const from = Number.isFinite(audio.volume) ? audio.volume : 0;
-    const to = Math.max(0, Math.min(1, targetVolume));
-
-    const step = (now) => {
-      const t = Math.min(1, (now - start) / Math.max(1, durationMs));
-      // courbe douce
-      const eased = t * t * (3 - 2 * t);
-      audio.volume = from + (to - from) * eased;
-      if (t < 1) {
-        fadeTimer = requestAnimationFrame(step);
+    if (isMuted){
+      // stop audio immediately (with a gentle fade)
+      if (!music.paused){
+        fadeOutAndPause();
       } else {
-        fadeTimer = null;
-        onDone && onDone();
+        music.volume = 0;
       }
-    };
-    fadeTimer = requestAnimationFrame(step);
-  }
-
-  async function playWithFadeIn() {
-    if (!audio || isMuted) return;
-    try {
-      // iOS: play() doit être suite à un geste utilisateur -> on "unlock" au 1er geste.
-      audio.volume = 0;
-      await audio.play();
-      fadeTo(BASE_VOLUME, FADE_IN_MS);
-    } catch (e) {
-      // Autoplay bloqué: on attend un geste utilisateur.
+    } else {
+      // if the book is open on an inside page, resume
+      const i = pageFlip.getCurrentPageIndex();
+      if (i === 1 || i === 2){
+        playWithFadeIn();
+      }
     }
   }
 
-  function fadeOutAndPause() {
-    if (!audio) return;
-    // Si déjà en pause, rien.
-    if (audio.paused) return;
-    fadeTo(0, FADE_OUT_MS, () => {
-      audio.pause();
+  function unlockAudio(){
+    if (audioUnlocked) return;
+    audioUnlocked = true;
+    // tiny play/pause to satisfy browser gesture requirement
+    music.play().then(() => {
+      music.pause();
+      music.currentTime = 0;
+    }).catch(() => {
+      // If blocked, we'll try again on next user gesture
+      audioUnlocked = false;
     });
   }
 
-  function setMuteUI() {
-    if (!muteBtn) return;
-    muteBtn.classList.toggle('is-muted', isMuted);
-    muteBtn.setAttribute('aria-pressed', String(isMuted));
-    // icône simple (compatible partout)
-    muteBtn.textContent = isMuted ? '🔇' : '🔊';
-    muteBtn.title = isMuted ? 'Activer la musique' : 'Couper la musique';
+  // Unlock on any user gesture
+  ['click','touchstart','keydown'].forEach(evt =>
+    document.addEventListener(evt, unlockAudio, { once: true, passive: true })
+  );
+
+  // Mute/unmute button (works on iOS because it's a user gesture)
+  if (muteBtn){
+    updateMuteIcon();
+    muteBtn.addEventListener('click', () => {
+      unlockAudio();
+      setMuted(!isMuted);
+    });
   }
 
-  // "Unlock" iOS: au premier touch/click, on tente un play() très court.
-  async function unlockAudioOnce() {
-    if (!audio || audioUnlocked) return;
-    audioUnlocked = true;
-    try {
-      // petit play/pause pour autoriser les prochains play()
-      audio.volume = 0;
-      await audio.play();
-      audio.pause();
-      audio.currentTime = 0;
-    } catch (e) {
-      // ignore
-    }
+  function fadeTo(target, onDone){
+    clearInterval(fadeTimer);
+    const step = (target > music.volume) ? 0.04 : -0.04;
+    fadeTimer = setInterval(() => {
+      const v = Math.max(0, Math.min(0.6, music.volume + step));
+      music.volume = v;
+      const reached = (step > 0) ? (v >= target) : (v <= target);
+      if (reached){
+        clearInterval(fadeTimer);
+        if (onDone) onDone();
+      }
+    }, 120);
   }
 
-  // On accroche un unlock au 1er geste utilisateur.
-  const unlockEvents = ['touchstart', 'pointerdown', 'mousedown', 'click'];
-  const onFirstGesture = async () => {
-    await unlockAudioOnce();
-    unlockEvents.forEach((evt) => document.removeEventListener(evt, onFirstGesture, { passive: true }));
-  };
-  unlockEvents.forEach((evt) => document.addEventListener(evt, onFirstGesture, { passive: true }));
-
-  // ----- PageFlip init
-  // La lib est chargée via CDN dans index.html
-  const pageFlip = new St.PageFlip(bookEl, {
-    width: 900,
-    height: 1200,
-    size: 'stretch',
-    minWidth: 315,
-    maxWidth: 1000,
-    minHeight: 420,
-    maxHeight: 1350,
-    maxShadowOpacity: 0.3,
-    showCover: true,
-    mobileScrollSupport: false,
-    useMouseEvents: true,
-    swipeDistance: 25,
-  });
-
-  const pages = Array.from(bookEl.querySelectorAll('.page'));
-  pageFlip.loadFromHTML(pages);
-
-  function currentViewLabel(pageIndex) {
-    return pageIndex === 0 ? 'Couverture' : 'Intérieur (livre ouvert)';
+  function playWithFadeIn(){
+    // must be unlocked OR triggered by a gesture (buttons/swipe)
+    music.play().then(() => {
+      fadeTo(0.6);
+    }).catch(() => {
+      // try unlock again on next interaction
+      audioUnlocked = false;
+    });
   }
 
-  function updateUI() {
-    const page = pageFlip.getCurrentPageIndex();
-    viewLabel.textContent = currentViewLabel(page);
-    prevBtn.disabled = page <= 0;
-    nextBtn.disabled = page >= pageFlip.getPageCount() - 1;
+  function fadeOutAndPause(){
+    fadeTo(0, () => {
+      music.pause();
+      // keep currentTime for smooth resume, or reset if you prefer:
+      // music.currentTime = 0;
+    });
   }
 
-  // Audio logique liée au flip
-  function syncAudioToPage(pageIndex) {
-    // page 0 = couverture => fade-out
-    if (pageIndex <= 0) {
-      fadeOutAndPause();
+  function updateAudio(pageIndex){
+    if (isMuted){
+      if (!music.paused) fadeOutAndPause();
       return;
     }
-    // intérieur => fade-in si pas muted
-    if (!isMuted) {
-      playWithFadeIn();
+    const isInside = (pageIndex === 1 || pageIndex === 2);
+    if (isInside){
+      if (music.paused){
+        playWithFadeIn();
+      }
+    } else {
+      if (!music.paused){
+        fadeOutAndPause();
+      }
     }
   }
-
-  pageFlip.on('init', () => {
-    updateUI();
-    setMuteUI();
-    syncAudioToPage(pageFlip.getCurrentPageIndex());
-  });
-
-  pageFlip.on('flip', (e) => {
-    const page = typeof e?.data === 'number' ? e.data : pageFlip.getCurrentPageIndex();
-    updateUI();
-    syncAudioToPage(page);
-  });
-
-  // ----- Navigation buttons
-  prevBtn.addEventListener('click', (ev) => {
-    ev.preventDefault();
-    pageFlip.flipPrev();
-  });
-  nextBtn.addEventListener('click', (ev) => {
-    ev.preventDefault();
-    pageFlip.flipNext();
-  });
-
-  // ----- Mute toggle
-  if (muteBtn && audio) {
-    setMuteUI();
-    muteBtn.addEventListener('click', async (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-
-      // Toujours unlock sur iOS avant de (re)jouer
-      await unlockAudioOnce();
-
-      isMuted = !isMuted;
-      setMuteUI();
-
-      if (isMuted) {
-        fadeOutAndPause();
-      } else {
-        // seulement si le livre est ouvert
-        const page = pageFlip.getCurrentPageIndex();
-        if (page > 0) {
-          playWithFadeIn();
-        }
-      }
-    }, { passive: false });
-  }
-
-  // ----- Safety: si l'utilisateur tourne avec un swipe, on empêche la page du navigateur de défiler
-  // (Le container est en overflow hidden mais certains iOS peuvent tenter un scroll).
-  bookEl.addEventListener('touchmove', (e) => {
-    if (e.cancelable) e.preventDefault();
-  }, { passive: false });
 });
