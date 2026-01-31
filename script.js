@@ -164,27 +164,18 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function fadeOutAndPause(){
-    fadeTo(0, () => {
-      music.pause();
-      // keep currentTime for smooth resume, or reset if you prefer:
-      // music.currentTime = 0;
-    });
-  }
+    // iOS Safari can ignore programmatic volume fades; ensure the sound stops reliably.
+    try { music.muted = true; } catch(e){}
+    try { music.pause(); } catch(e){}
+    // Safety: some iOS versions need a tiny delay to apply pause.
+    setTimeout(() => { try { music.pause(); } catch(e){} }, 50);
 
-  function updateAudio(pageIndex){
-    if (isMuted){
-      if (!music.paused) fadeOutAndPause();
-      return;
-    }
-    const isInside = (pageIndex === 1 || pageIndex === 2);
-    if (isInside){
-      if (music.paused){
-        playWithFadeIn();
+    // Best-effort fade for browsers that support volume changes (kept for nice UX).
+    try {
+      if (typeof fadeTo === 'function') {
+        fadeTo(0, () => {
+          try { music.pause(); } catch(e){}
+        });
       }
-    } else {
-      if (!music.paused){
-        fadeOutAndPause();
-      }
-    }
-  }
-});
+    } catch(e){}
+  });
