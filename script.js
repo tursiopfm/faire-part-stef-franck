@@ -1,226 +1,50 @@
-// V13 layout + PageFlip + Audio fade (pages 2-3 only)
-// Works with index.html that contains: #viewport, #book, #prevBtn, #nextBtn, #pageLabel
 
-document.addEventListener('DOMContentLoaded', () => {
-  const viewportEl = document.getElementById('viewport');
-  const bookEl = document.getElementById('book');
-  const prevBtn = document.getElementById('prevBtn');
-  const nextBtn = document.getElementById('nextBtn');
-  const pageLabel = document.getElementById('pageLabel');
+const audio = document.getElementById("audio");
+const btn = document.getElementById("audioToggle");
 
-  // ---- PageFlip init (keep V13 behaviour) ----
-  const pageFlip = new St.PageFlip(bookEl, {
-    width: 560,
-    height: 792,
-    size: "stretch",
-    minWidth: 320,
-    maxWidth: 1400,
-    minHeight: 420,
-    maxHeight: 950,
-    showCover: true,
-    flippingTime: 900,
-    maxShadowOpacity: 0.45,
-    useMouseEvents: true,
-    usePortrait: true,
-    autoSize: true
-  });
+let unlocked = false;
 
-  pageFlip.loadFromImages([
-    "page1.png",
-    "page2.png",
-    "page3.png",
-    "page4.png"
-  ]);
+function unlockAudio(){
+  if(unlocked) return;
+  audio.play().then(()=>{
+    audio.pause();
+    audio.currentTime = 0;
+    unlocked = true;
+  }).catch(()=>{});
+}
 
-  // ---- Closed cover/back clipping (V13) ----
-  function setMode(mode){ // 'cover' | 'back' | 'spread'
-    viewportEl.classList.remove('is-cover','is-back','is-spread');
-    viewportEl.classList.add(
-      mode === 'cover' ? 'is-cover' : (mode === 'back' ? 'is-back' : 'is-spread')
-    );
+btn.addEventListener("click", ()=>{
+  unlockAudio();
+  if(audio.paused){
+    audio.play();
+    btn.textContent = "🔇";
+  } else {
+    audio.pause();
+    btn.textContent = "🔊";
   }
+});
 
-  function updateUI(){
-    const i = pageFlip.getCurrentPageIndex(); // 0..3
-    if (i === 0){
-      pageLabel.textContent = "Couverture";
-      setMode('cover');
-    } else if (i === 3){
-      pageLabel.textContent = "Dos du livre";
-      setMode('back');
-    } else {
-      pageLabel.textContent = "Intérieur (livre ouvert)";
-      setMode('spread');
-    }
+document.addEventListener("touchstart", unlockAudio, { once:true });
 
-    // buttons
-    prevBtn.disabled = (i === 0);
-    nextBtn.disabled = (i === 3);
+const pageFlip = new St.PageFlip(document.getElementById("book"),{
+  width:560,
+  height:792,
+  size:"stretch",
+  showCover:true,
+  flippingTime:900
+});
 
-    updateAudio(i);
-  }
+pageFlip.loadFromImages([
+  "page1.png",
+  "page2.png",
+  "page3.png",
+  "page4.png"
+]);
 
-  // ---- Navigation ----
-  prevBtn.addEventListener('click', () => pageFlip.flipPrev());
-  nextBtn.addEventListener('click', () => pageFlip.flipNext());
-
-  pageFlip.on('flip', updateUI);
-  pageFlip.on('changeState', updateUI);
-  pageFlip.on('init', updateUI);
-
-  // Force first UI refresh once images are ready
-  setTimeout(updateUI, 200);
-
-  // ---- Audio (fade in on pages 2-3, fade out otherwise) ----
-  const AUDIO_SRC = "music.mpeg"; // keep this name (in your zip)
-
-  // iOS/Safari can ignore some controls unless audio is started from a user gesture.
-  // Creating the Audio element lazily + binding to touch events makes the mute button
-  // work reliably on iPhone.
-  let music = null;
-
-  function getMusic() {
-    if (music) return music;
-    const a = new Audio(AUDIO_SRC);
-    a.loop = true;
-    a.volume = 0;
-    // iOS inline playback
-    a.setAttribute('playsinline', '');
-    a.setAttribute('webkit-playsinline', '');
-    music = a;
-    return music;
-  }
-
-  // Optional UI: mute/unmute without changing the layout
-  const audioToggle = document.getElementById('audioToggle');
-  let userMuted = false;
-  function updateAudioToggleUI(){
-    if (!audioToggle) return;
-    const iconEl = audioToggle.querySelector('.icon') || audioToggle;
-    if (userMuted) {
-      iconEl.textContent = '🔇';
-      audioToggle.setAttribute('aria-label', 'Rétablir la musique');
-    } else {
-      iconEl.textContent = '🔊';
-      audioToggle.setAttribute('aria-label', 'Couper la musique');
-    }
-  }
-  updateAudioToggleUI();
-
-  // iOS Safari (and some in-app iOS browsers) can ignore programmatic volume
-  // changes on <audio>. To guarantee a real "mute", we will fade-out then
-  // PAUSE the audio. Unmute = play + fade-in.
-
-  let audioUnlocked = false;
-  let fadeTimer = null;
-
-  function clearFade(){
-    if (fadeTimer) {
-      clearInterval(fadeTimer);
-      fadeTimer = null;
-    }
-  }
-
-  function unlockAudio(){
-    if (audioUnlocked) return;
-    audioUnlocked = true;
-    const music = getMusic();
-    // tiny play/pause to satisfy browser gesture requirement
-    music.play().then(() => {
-      music.pause();
-      music.currentTime = 0;
-    }).catch(() => {
-      // If blocked, we'll try again on next user gesture
-      audioUnlocked = false;
-    });
-  }
-
-  // Unlock on any user gesture
-  ['click','touchstart','keydown'].forEach(evt =>
-    document.addEventListener(evt, unlockAudio, { once: true, passive: true })
-  );
-
-  function fadeTo(target, onDone){
-    const music = getMusic();
-    clearInterval(fadeTimer);
-    const step = (target > music.volume) ? 0.04 : -0.04;
-    fadeTimer = setInterval(() => {
-      const v = Math.max(0, Math.min(0.6, music.volume + step));
-      music.volume = v;
-      const reached = (step > 0) ? (v >= target) : (v <= target);
-      if (reached){
-        clearInterval(fadeTimer);
-        if (onDone) onDone();
-      }
-    }, 120);
-  }
-
-  function playWithFadeIn(){
-    // must be unlocked OR triggered by a gesture (buttons/swipe)
-    const music = getMusic();
-    music.play().then(() => {
-      fadeTo(0.6);
-    }).catch(() => {
-      // try unlock again on next interaction
-      audioUnlocked = false;
-    });
-  }
-
-  function fadeOutAndPause(){
-    const music = getMusic();
-    fadeTo(0, () => {
-      music.pause();
-      // keep currentTime for smooth resume, or reset if you prefer:
-      // music.currentTime = 0;
-    });
-  }
-
-  function updateAudio(pageIndex){
-    const music = getMusic();
-    // If user muted, always ensure the audio is off.
-    if (userMuted){
-      if (!music.paused) fadeOutAndPause();
-      return;
-    }
-    const isInside = (pageIndex === 1 || pageIndex === 2);
-    if (isInside){
-      if (music.paused){
-        playWithFadeIn();
-      }
-    } else {
-      if (!music.paused){
-        fadeOutAndPause();
-      }
-    }
-  }
-
-  // Toggle button (mute/unmute)
-  if (audioToggle){
-    updateAudioToggleUI();
-    const onToggle = (e) => {
-      // On iOS, click can be unreliable when swiping; use touchstart/pointerdown too.
-      if (e){
-        e.preventDefault();
-        e.stopPropagation();
-      }
-      unlockAudio();
-      userMuted = !userMuted;
-      updateAudioToggleUI();
-      const idx = (pageFlip && typeof pageFlip.getCurrentPageIndex === 'function')
-        ? pageFlip.getCurrentPageIndex()
-        : 0;
-      // Apply immediately based on current page
-      updateAudio(idx);
-    };
-
-    audioToggle.addEventListener('click', onToggle);
-    audioToggle.addEventListener('touchstart', onToggle, { passive: false });
-    audioToggle.addEventListener('touchend', onToggle, { passive: false });
-    audioToggle.addEventListener('pointerdown', onToggle, { passive: false });
-    audioToggle.addEventListener('pointerup', onToggle, { passive: false });
-
-    // Extra fallback for some iOS in-app browsers that sometimes
-    // don't fire the listener as expected.
-    audioToggle.onclick = onToggle;
+pageFlip.on("flip", ()=>{
+  const i = pageFlip.getCurrentPageIndex();
+  if(i === 0 || i === 3){
+    audio.pause();
+    btn.textContent = "🔊";
   }
 });
