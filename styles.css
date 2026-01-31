@@ -37,10 +37,7 @@ body{
   backdrop-filter: blur(10px);
 }
 .btn:hover{background:rgba(255,255,255,.09)}
-.btn:active{transform:scale(.98)}
 .btn:disabled{opacity:.35; cursor:not-allowed}
-
-.btn.mute{min-width:44px; text-align:center; font-size:18px}
 .pill{
   padding:8px 12px;
   border:1px solid rgba(255,255,255,.12);
@@ -99,5 +96,5 @@ body{
 }
 
 @media (max-width: 680px){
-  .pill{min-width: 120px}
+  .pill{min-width: 140px}
 }
